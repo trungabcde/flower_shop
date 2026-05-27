@@ -414,6 +414,62 @@
             font-size: 13px;
         }
 
+        /* Chỉ đồng bộ chiều cao 26px cho các thành phần cần thiết */
+        input,
+        select,
+        .filters-bar input,
+        .filters-bar select,
+        .card-header .btn-primary,           /* + Товар */
+        .card-header button:first-child,     /* + (thêm category) */
+        #apply-filters,                      /* Применить */
+        #reset-filters,                      /* Сбросить */
+        .ftog,                               /* Фильтры ▼ */
+        #btn-add-category-param,             /* + Характеристика */
+        .modal-footer .btn-secondary,        /* Отмена */
+        .modal-footer .btn-primary {         /* Сохранить */
+            height: 28px !important;
+            padding: 0 12px !important;
+            font-size: 14px !important;
+            line-height: 28px !important;
+        }
+
+        /* Nút + (hình vuông) */
+        .card-header button:first-child {
+            width: 28px !important;
+            padding: 0 !important;
+            text-align: center !important;
+        }
+
+        /* Ô nhập liệu */
+        input, select, .filters-bar input, .filters-bar select {
+            padding: 0 8px !important;
+            font-size: 14px !important;
+        }
+
+        /* Hiển thị dropdown Выбрать из существующих */
+        #f-char-existing {
+            display: block !important;
+            width: 100% !important;
+            padding: 4px 8px !important;
+            border: 1px solid #ddd !important;
+            border-radius: 4px !important;
+            background: white !important;
+            font-size: 14px !important;
+            line-height: 20px !important;
+            height: auto !important;
+            min-height: 28px !important;
+        }
+
+        .fg {
+            margin-bottom: 15px;
+            overflow: visible !important;
+        }
+        
+        #modal-enum .form-group:has(#enum-param-id) {
+            display: none !important;
+        }
+
+
     </style>
 </head>
 <body>
@@ -439,7 +495,7 @@
         <div class="content">
             <!-- CATALOG PAGE -->
             <div id="page-catalog" class="page active">
-                <div style="display: grid; grid-template-columns: 280px 1fr; gap: 20px;">
+                <div style="display: grid; grid-template-columns: 380px 1fr; gap: 20px;">
                     <!-- Categories tree -->
                     <div class="card">
                         <div class="card-header">
@@ -488,6 +544,27 @@
                                         <div class="form-group">
                                             <label>Высота до (см)</label>
                                             <input type="number" id="filter-height-max" placeholder="до">
+                                        </div>
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Длина от (см)</label>
+                                            <input type="number" id="filter-length-min" placeholder="от" min="0">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Длина до (см)</label>
+                                            <input type="number" id="filter-length-max" placeholder="до" min="0">
+                                        </div>
+                                    </div>
+
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Ширина от (см)</label>
+                                            <input type="number" id="filter-width-min" placeholder="от" min="0">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Ширина до (см)</label>
+                                            <input type="number" id="filter-width-max" placeholder="до" min="0">
                                         </div>
                                     </div>
                                     <div class="form-row">
@@ -666,6 +743,12 @@
                 <label>Код</label>
                 <input type="text" id="enum-code">
             </div>
+            <div class="form-group">
+                <label>Связанная характеристика</label>
+                <select id="enum-param-id">
+                    <option value="">— не выбрана —</option>
+                </select>
+            </div>
         </div>
         <div class="modal-footer">
             <button class="btn-secondary" onclick="closeModal('modal-enum')">Отмена</button>
@@ -714,10 +797,9 @@
                 <label>Обозначение</label>
                 <input type="text" id="unit-short">
             </div>
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" id="unit-integer-only"> Только целые числа
-                </label>
+            <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+                <input type="checkbox" id="unit-integer-only" style="width: auto; margin: 0;">
+                <label style="margin: 0; font-weight: normal;">Только целые числа</label>
             </div>
         </div>
         <div class="modal-footer">
@@ -733,6 +815,7 @@
     let currentEnumId = null;
     let currentProductId = null;
     let allCategories = [];
+    let expandedState = {};
 
     // Helper functions
     async function fetchAPI(url, options = {}) {
@@ -802,22 +885,28 @@
             container.innerHTML = '';
         }
         for (const node of nodes) {
+            const hasChildren = node.children && node.children.length;
+            const isExpanded = expandedState[node.id] !== false; // Mặc định mở
+            
             const div = document.createElement('div');
             div.className = 'tree-item';
             div.style.paddingLeft = (level * 20 + 8) + 'px';
             div.innerHTML = `
-                <span class="tree-toggle" onclick="toggleTreeNode(this)">${node.children && node.children.length ? '▼' : ' '}</span>
+                <span class="tree-toggle" onclick="toggleTreeNode(this)">${hasChildren ? (isExpanded ? '▼' : '▶') : ' '}</span>
                 <span class="tree-label" data-id="${node.id}" data-name="${node.name}" onclick="selectCategory(${node.id}, '${node.name}')">📁 ${node.name}</span>
                 <span class="tree-actions">
+                    <button class="btn-outline btn-sm move-up" data-id="${node.id}">▲</button>
+                    <button class="btn-outline btn-sm move-down" data-id="${node.id}">▼</button>
                     <button class="btn-outline btn-sm" onclick="editCategory(${node.id}, '${node.name}', '${node.code}')">✏️</button>
                     <button class="btn-danger btn-sm" onclick="deleteCategory(${node.id})">✕</button>
                 </span>
             `;
             container.appendChild(div);
-            if (node.children && node.children.length) {
+            
+            if (hasChildren) {
                 const childDiv = document.createElement('div');
                 childDiv.className = 'tree-node';
-                childDiv.style.display = 'block';
+                childDiv.style.display = isExpanded ? 'block' : 'none';
                 container.appendChild(childDiv);
                 renderTreeChildren(node.children, childDiv, level + 1);
             }
@@ -826,28 +915,33 @@
 
     function renderTreeChildren(children, parentDiv, level) {
         for (const child of children) {
+            const hasChildren = child.children && child.children.length;
+            const isExpanded = expandedState[child.id] !== false;
+            
             const div = document.createElement('div');
             div.className = 'tree-item';
             div.style.paddingLeft = (level * 20 + 8) + 'px';
             div.innerHTML = `
-                <span class="tree-toggle" onclick="toggleTreeNode(this)">${child.children && child.children.length ? '▼' : ' '}</span>
+                <span class="tree-toggle" onclick="toggleTreeNode(this)">${hasChildren ? (isExpanded ? '▼' : '▶') : ' '}</span>
                 <span class="tree-label" data-id="${child.id}" data-name="${child.name}" onclick="selectCategory(${child.id}, '${child.name}')">📁 ${child.name}</span>
                 <span class="tree-actions">
+                    <button class="btn-outline btn-sm move-up" data-id="${child.id}">▲</button>
+                    <button class="btn-outline btn-sm move-down" data-id="${child.id}">▼</button>
                     <button class="btn-outline btn-sm" onclick="editCategory(${child.id}, '${child.name}', '${child.code}')">✏️</button>
                     <button class="btn-danger btn-sm" onclick="deleteCategory(${child.id})">✕</button>
                 </span>
             `;
             parentDiv.appendChild(div);
-            if (child.children && child.children.length) {
+            
+            if (hasChildren) {
                 const childDiv = document.createElement('div');
                 childDiv.className = 'tree-node';
-                childDiv.style.display = 'block';
+                childDiv.style.display = isExpanded ? 'block' : 'none';
                 parentDiv.appendChild(childDiv);
                 renderTreeChildren(child.children, childDiv, level + 1);
             }
         }
     }
-
     function toggleTreeNode(btn) {
         const parent = btn.parentElement;
         const next = parent.nextElementSibling;
@@ -855,6 +949,13 @@
             const isOpen = next.style.display !== 'none';
             next.style.display = isOpen ? 'none' : 'block';
             btn.textContent = isOpen ? '▶' : '▼';
+            
+            // Lưu trạng thái
+            const label = parent.querySelector('.tree-label');
+            const id = label?.dataset.id;
+            if (id) {
+                expandedState[id] = !isOpen;
+            }
         }
     }
 
@@ -1023,7 +1124,7 @@
         const baseUnitId = document.getElementById('cat-base-unit').value;
         
         if (!name || !code) {
-            showMessageModal("Название и код обязательны");
+            showMessageModal("Введите название и код", true);
             return;
         }
         
@@ -1033,11 +1134,13 @@
                 if (parentId) url += `&parent_id=${parentId}`;
                 if (baseUnitId) url += `&base_unit_id=${baseUnitId}`;
                 await fetchAPI(url, { method: 'PUT' });
+                showMessageModal("Категория успешно обновлена!");  // ← THÊM
             } else {
                 let url = `/categories?name=${encodeURIComponent(name)}&code=${encodeURIComponent(code)}`;
                 if (parentId) url += `&parent_id=${parentId}`;
                 if (baseUnitId) url += `&base_unit_id=${baseUnitId}`;
                 await fetchAPI(url, { method: 'POST' });
+                showMessageModal("Категория успешно создана!");    // ← THÊM
             }
             closeModal('modal-category');
             await loadCategories();
@@ -1226,6 +1329,15 @@
             units.forEach(u => {
                 unitSelect.innerHTML += `<option value="${u.id_unit}" ${product && product.unit_id === u.id_unit ? 'selected' : ''}>${u.name} (${u.short_name})</option>`;
             });
+            
+            // 🔥 XÓA toàn bộ logic updatePriceStep
+            // Chỉ giữ onchange để reload parameters khi đổi đơn vị
+            unitSelect.onchange = async () => {
+                const catId = parseInt(document.getElementById('prod-category').value);
+                if (catId) {
+                    await loadCategoryParamsForProduct(catId, product ? product.id_product : null);
+                }
+            };
         });
         
         fetchAPI('/categories/tree').then(cats => {
@@ -1280,27 +1392,64 @@
     async function saveProduct() {
         const name = document.getElementById('prod-name').value;
         const code = document.getElementById('prod-code').value;
-        const price = parseInt(document.getElementById('prod-price').value);
+        const price = parseFloat(document.getElementById('prod-price').value);
         const categoryId = parseInt(document.getElementById('prod-category').value);
         const unitId = parseInt(document.getElementById('prod-unit').value);
 
+        if (!name || !code) {
+            showMessageModal("Введите название и код товара", true);
+            return;
+        }
+        
+        if (isNaN(price) || price < 0) {
+            showMessageModal("Введите корректную цену", true);
+            return;
+        }
+
+        // 🔥 KIỂM TRA CÁC TRƯỜNG BẮT BUỘC (ОБЯЗАТЕЛЬНЫЕ)
+        try {
+            const params = await fetchAPI(`/categories/${categoryId}/parameters`);
+            
+            for (const p of params) {
+                if (p.is_mandatory) {
+                    const input = document.getElementById(`param-${p.id_parameter}`);
+                    if (input) {
+                        let value = input.value;
+                        if (p.param_type_code === 'enum') {
+                            if (!value || value === '' || value === '— Выберите —') {
+                                showMessageModal(`Пожалуйста, заполните обязательное поле: "${p.name}"`, true);
+                                return;
+                            }
+                        } else if (p.param_type_code === 'integer') {
+                            if (value === undefined || value === null || value === '') {
+                                showMessageModal(`Пожалуйста, заполните обязательное поле: "${p.name}"`, true);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch(e) {
+            console.error("Error checking mandatory fields:", e);
+        }
+
         try {
             if (window.currentProductEdit) {
-                // Cập nhật
                 await fetchAPI(`/products/${window.currentProductEdit.id_product}?name=${encodeURIComponent(name)}&price=${price}&code=${encodeURIComponent(code)}&unit_id=${unitId}&category_id=${categoryId}`, { method: 'PUT' });
                 await saveProductParameters(window.currentProductEdit.id_product);
+                showMessageModal("Товар успешно обновлен!");
             } else {
-                // Tạo mới
                 const newProduct = await fetchAPI(`/products?name=${encodeURIComponent(name)}&code=${encodeURIComponent(code)}&category_id=${categoryId}&unit_id=${unitId}&price=${price}`, { method: 'POST' });
                 if (newProduct && newProduct.id_product) {
                     await saveProductParameters(newProduct.id_product);
                 }
+                showMessageModal("Товар успешно создан!");
             }
             closeModal('modal-product');
             await loadProducts();
             window.currentProductEdit = null;
         } catch (e) {
-            showMessageModal("Ошибка: " + e.message, true);
+            showMessageModal("Ошибка: " + (e.message || "Не удалось сохранить товар"), true);
         }
     }
 
@@ -1376,6 +1525,19 @@
         }
     }
 
+    async function loadParametersForEnum() {
+        try {
+            const params = await fetchAPI('/parameters-for-enum');
+            const select = document.getElementById('enum-param-id');
+            select.innerHTML = '<option value="">— не выбрана —</option>';
+            params.forEach(p => {
+                select.innerHTML += `<option value="${p.id}">${p.name} (${p.code})</option>`;
+            });
+        } catch(e) {
+            console.error("Error loading parameters:", e);
+        }
+    }
+
     async function selectEnum(id, name) {
         currentEnumId = id;
         document.getElementById('current-enum-name').innerHTML = `${name} - Значения`;
@@ -1419,7 +1581,10 @@
         document.getElementById('enum-modal-title').textContent = enumObj ? 'Редактировать перечисление' : 'Новое перечисление';
         document.getElementById('enum-name').value = enumObj ? enumObj.name : '';
         document.getElementById('enum-code').value = enumObj ? enumObj.code : '';
+        document.getElementById('enum-param-id').value = enumObj ? (enumObj.param_id || '') : '';
+        
         window.currentEnumEdit = enumObj;
+        loadParametersForEnum();  // 🔥 THÊM DÒNG NÀY
         showModal('modal-enum');
     }
 
@@ -1430,16 +1595,36 @@
     async function saveEnum() {
         const name = document.getElementById('enum-name').value;
         const code = document.getElementById('enum-code').value;
+        let paramId = document.getElementById('enum-param-id').value;
+        
+        if (!name || !code) {
+            showMessageModal("Введите название и код", true);
+            return;
+        }
+        
         try {
+            let url;
             if (window.currentEnumEdit) {
-                await fetchAPI(`/enums/${window.currentEnumEdit.id_enum}?name=${encodeURIComponent(name)}&code=${encodeURIComponent(code)}`, { method: 'PUT' });
+                url = `/enums/${window.currentEnumEdit.id_enum}?name=${encodeURIComponent(name)}&code=${encodeURIComponent(code)}`;
+                if (paramId && paramId !== "") {
+                    url += `&param_id=${paramId}`;
+                }
+                await fetchAPI(url, { method: 'PUT' });
+                showMessageModal("Перечисление успешно обновлено!");
             } else {
-                await fetchAPI(`/enums?name=${encodeURIComponent(name)}&code=${encodeURIComponent(code)}`, { method: 'POST' });
+                url = `/enums?name=${encodeURIComponent(name)}&code=${encodeURIComponent(code)}`;
+                // 🔥 CHỈ THÊM param_id NẾU CÓ GIÁ TRỊ
+                if (paramId && paramId !== "") {
+                    url += `&param_id=${paramId}`;
+                }
+                await fetchAPI(url, { method: 'POST' });
+                showMessageModal("Перечисление успешно создано!");
             }
             closeModal('modal-enum');
             await loadEnums();
         } catch (e) {
-            showMessageModal("Ошибка: " + e.message, true);
+            console.error("Error:", e);
+            showMessageModal("Ошибка: " + (e.message || "Не удалось сохранить"), true);
         }
     }
 
@@ -1471,16 +1656,25 @@
     async function saveEnumItem() {
         const name = document.getElementById('enumitem-name').value;
         const code = document.getElementById('enumitem-code').value;
+        
+        if (!name || !code) {
+            showMessageModal("Введите название и код", true);
+            return;
+        }
+        
         try {
             if (window.currentEnumItemEdit) {
                 await fetchAPI(`/enum-items/${window.currentEnumItemEdit.id_item}?item_name=${encodeURIComponent(name)}&item_code=${encodeURIComponent(code)}`, { method: 'PUT' });
+                showMessageModal("Значение успешно обновлено!");  // ← THÊM
             } else {
                 await fetchAPI(`/enum-items?id_enum=${currentEnumId}&item_name=${encodeURIComponent(name)}&item_code=${encodeURIComponent(code)}`, { method: 'POST' });
+                showMessageModal("Значение успешно добавлено!");   // ← THÊM
             }
             closeModal('modal-enumitem');
             await loadEnumItems(currentEnumId);
         } catch (e) {
-            showMessageModal("Ошибка: " + e.message, true);
+            console.error("Error:", e);
+            showMessageModal("Ошибка: " + (e.message || "Не удалось сохранить"), true);
         }
     }
 
@@ -1548,6 +1742,8 @@
         console.log("loadCategoryParamsForProduct called - categoryId:", categoryId, "productId:", productId);
         try {
             const params = await fetchAPI(`/categories/${categoryId}/parameters`);
+            const units = await fetchAPI('/units');  // Lấy danh sách đơn vị
+            
             console.log("Params received:", params);
             const container = document.getElementById('prod-params-container');
             
@@ -1583,12 +1779,26 @@
                     } else if (p.min_value !== null && p.min_value !== undefined) {
                         rangeText = `<small style="color: #888; display: block; font-size: 11px;">≥ ${p.min_value}</small>`;
                     } else if (p.max_value !== null && p.max_value !== undefined) {
-                        rangeText = `<small style="color: #888; display: block; font-size: 11px;">≤ ${p.max_value}</small>`;
+                        rangeText = `<small style="color: #888; display; block; font-size: 11px;">≤ ${p.max_value}</small>`;
                     }
                     
                     let minAttr = p.min_value !== null ? `min="${p.min_value}"` : '';
                     let maxAttr = p.max_value !== null ? `max="${p.max_value}"` : '';
-                    inputHtml = `<input type="number" id="param-${p.id_parameter}" class="param-input-number" data-param-id="${p.id_parameter}" placeholder="Введите число" step="any" ${minAttr} ${maxAttr} onchange="validateNumberInput(this, ${p.min_value || 'null'}, ${p.max_value || 'null'})">`;
+                    
+                    // 🔥 QUAN TRỌNG: Lấy step từ base_unit_id của parameter (KHÔNG phải đơn vị sản phẩm)
+                    let stepValue = "any";
+                    if (p.base_unit_id) {
+                        const baseUnit = units.find(u => u.id_unit === p.base_unit_id);
+                        if (baseUnit && baseUnit.is_integer_only === true) {
+                            stepValue = "1";
+                        } else {
+                            stepValue = "any";
+                        }
+                    }
+                    
+                    console.log(`Param ${p.name}: base_unit_id=${p.base_unit_id}, step=${stepValue}`);  // Debug
+                    
+                    inputHtml = `<input type="number" id="param-${p.id_parameter}" class="param-input-number" data-param-id="${p.id_parameter}" placeholder="Введите число" step="${stepValue}" ${minAttr} ${maxAttr} onchange="validateNumberInput(this, ${p.min_value || 'null'}, ${p.max_value || 'null'})">`;
                     
                     html += `
                         <div class="param-row">
@@ -1611,6 +1821,7 @@
             }
             html += '</div></div>';
             container.innerHTML = html;
+            
             if (productId) {
                 console.log("Loading current values for product:", productId);
                 await loadCurrentProductParameterValues(productId, params);
@@ -1716,11 +1927,18 @@
         const short = document.getElementById('unit-short').value;
         const integerOnly = document.getElementById('unit-integer-only').checked;
         
+        if (!name || !short) {
+            showMessageModal("Введите название и обозначение", true);
+            return;
+        }
+        
         try {
             if (window.currentUnitEdit) {
                 await fetchAPI(`/units/${window.currentUnitEdit.id_unit}?name=${encodeURIComponent(name)}&short_name=${encodeURIComponent(short)}&is_integer_only=${integerOnly}`, { method: 'PUT' });
+                showMessageModal("Единица измерения успешно обновлена!");  // ← THÊM
             } else {
                 await fetchAPI(`/units?name=${encodeURIComponent(name)}&short_name=${encodeURIComponent(short)}&is_integer_only=${integerOnly}`, { method: 'POST' });
+                showMessageModal("Единица измерения успешно создана!");    // ← THÊM
             }
             closeModal('modal-unit');
             await loadUnits();
@@ -1922,6 +2140,7 @@
             for (const p of availableParams) {
                 selectExisting.innerHTML += `<option value="${p.id_parameter}">${p.name} (${p.code})</option>`;
             }
+
         } catch(e) {
             console.error("Error loading existing params:", e);
         }
@@ -1941,8 +2160,17 @@
                 const type = document.getElementById('f-char-type').value;
                 
                 if (!name || !code) {
-                    showMessageModal("Введите название и код характеристики");
+                    showMessageModal("Введите название и код характеристики", true);
                     return;
+                }
+                
+                // 🔥 THÊM KIỂM TRA NÀY
+                if (type === 'enum') {
+                    const selectedEnumId = document.getElementById('f-char-enum').value;
+                    if (!selectedEnumId || selectedEnumId === '') {
+                        showMessageModal("Для типа enum необходимо выбрать перечисление", true);
+                        return;
+                    }
                 }
                 
                 let paramTypeId = 1; // string
@@ -1950,14 +2178,22 @@
                 if (type === 'enum') paramTypeId = 3;
                 
                 try {
+                    const baseUnitId = document.getElementById('f-char-unit').value || null;
                     let url = `${API}/parameters?name=${encodeURIComponent(name)}&short_name=${encodeURIComponent(code)}&code=${encodeURIComponent(code)}&id_param_type=${paramTypeId}`;
-
+                    
+                    if (baseUnitId) {
+                        url += `&base_unit_id=${baseUnitId}`;
+                    }
+                    
+                    // 🔥 LƯU Ý: ĐOẠN NÀY BỊ TRÙNG LẶP (2 lần kiểm tra type === 'numeric')
+                    // Cần xóa một đoạn
                     if (type === 'numeric') {
                         const minVal = document.getElementById('f-char-min').value;
                         const maxVal = document.getElementById('f-char-max').value;
                         if (minVal) url += `&min_value=${minVal}`;
                         if (maxVal) url += `&max_value=${maxVal}`;
                     }
+                    
                     const response = await fetch(url, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' }
@@ -2031,6 +2267,18 @@
             
             document.getElementById('f-char-name').value = param.name;
             document.getElementById('f-char-code').value = param.code;
+
+            // 🔥 THÊM ĐOẠN NÀY VÀO ĐÂY
+            fetchAPI('/units').then(units => {
+                const unitSelect = document.getElementById('f-char-unit');
+                unitSelect.innerHTML = '<option value="">— нет —</option>';
+                units.forEach(u => {
+                    unitSelect.innerHTML += `<option value="${u.id_unit}">${u.name} (${u.short_name})</option>`;
+                });
+                if (param.base_unit_id) {
+                    unitSelect.value = param.base_unit_id;
+                }
+            });
             
             let typeValue = 'string';
             if (paramType === 'enum') typeValue = 'enum';
@@ -2190,7 +2438,7 @@
         const isMandatory = document.getElementById('f-char-req').checked;
         
         if (!name || !code) {
-            showMessageModal("Введите название и код характеристики");
+            showMessageModal("Введите название и код характеристики", true);
             return;
         }
         
@@ -2200,6 +2448,12 @@
         
         try {
             let url = `/parameters/${paramId}?name=${encodeURIComponent(name)}&short_name=${encodeURIComponent(code)}&code=${encodeURIComponent(code)}&id_param_type=${id_param_type}`;
+            
+            // 🔥 THÊM base_unit_id VÀO ĐÂY
+            const baseUnitId = document.getElementById('f-char-unit').value || null;
+            if (baseUnitId) {
+                url += `&base_unit_id=${baseUnitId}`;
+            }
             
             if (type === 'numeric') {
                 const minVal = document.getElementById('f-char-min').value;
@@ -2229,7 +2483,6 @@
                         console.log("No old enum values to delete");
                     }
                     
-                    // Thêm enum values mới từ bộ enum đã chọn
                     for (const item of enumItems) {
                         await fetchAPI(`/enum-values?parameter_id=${paramId}&value_name=${encodeURIComponent(item.item_name)}&value_code=${encodeURIComponent(item.item_code)}`, { 
                             method: 'POST' 
@@ -2378,19 +2631,22 @@
 
     async function loadFilterEnums() {
         try {
-            const themes = await fetchAPI('/enums/1/items');
-            const themeSelect = document.getElementById('filter-theme');
-            themeSelect.innerHTML = '<option value="">— любая —</option>';
-            themes.forEach(t => {
-                themeSelect.innerHTML += `<option value="${t.id_item}">${t.item_name}</option>`;
-            });
-            
-            const colors = await fetchAPI('/enums/2/items');
+            // Lấy enum_values trực tiếp từ parameter Цвет (id=2)
+            const colors = await fetchAPI('/parameters/2/enum-values');
             const colorSelect = document.getElementById('filter-color');
             colorSelect.innerHTML = '<option value="">— любой —</option>';
             colors.forEach(c => {
-                colorSelect.innerHTML += `<option value="${c.id_item}">${c.item_name}</option>`;
+                colorSelect.innerHTML += `<option value="${c.id_enum_value}">${c.value_name}</option>`;
             });
+            
+            // Lấy enum_values cho parameter Тема (id=1) nếu cần
+            const themes = await fetchAPI('/parameters/1/enum-values');
+            const themeSelect = document.getElementById('filter-theme');
+            themeSelect.innerHTML = '<option value="">— любая —</option>';
+            themes.forEach(t => {
+                themeSelect.innerHTML += `<option value="${t.id_enum_value}">${t.value_name}</option>`;
+            });
+            
         } catch(e) {
             console.error("Error loading filter enums:", e);
         }
@@ -2401,6 +2657,10 @@
         const color = document.getElementById('filter-color').value;
         const heightMin = document.getElementById('filter-height-min').value;
         const heightMax = document.getElementById('filter-height-max').value;
+        const lengthMin = document.getElementById('filter-length-min').value;
+        const lengthMax = document.getElementById('filter-length-max').value;
+        const widthMin = document.getElementById('filter-width-min').value;
+        const widthMax = document.getElementById('filter-width-max').value;
         const diamMin = document.getElementById('filter-diam-min').value;
         const diamMax = document.getElementById('filter-diam-max').value;
         const priceMin = document.getElementById('filter-price-min').value;
@@ -2411,6 +2671,10 @@
         if (color) url += `&color=${color}`;
         if (heightMin) url += `&height_min=${heightMin}`;
         if (heightMax) url += `&height_max=${heightMax}`;
+        if (lengthMin) url += `&length_min=${lengthMin}`;
+        if (lengthMax) url += `&length_max=${lengthMax}`;
+        if (widthMin) url += `&width_min=${widthMin}`;
+        if (widthMax) url += `&width_max=${widthMax}`;
         if (diamMin) url += `&diam_min=${diamMin}`;
         if (diamMax) url += `&diam_max=${diamMax}`;
         if (priceMin) url += `&price_min=${priceMin}`;
@@ -2426,6 +2690,10 @@
         document.getElementById('filter-color').value = '';
         document.getElementById('filter-height-min').value = '';
         document.getElementById('filter-height-max').value = '';
+        document.getElementById('filter-length-min').value = '';
+        document.getElementById('filter-length-max').value = '';
+        document.getElementById('filter-width-min').value = '';
+        document.getElementById('filter-width-max').value = '';
         document.getElementById('filter-diam-min').value = '';
         document.getElementById('filter-diam-max').value = '';
         document.getElementById('filter-price-min').value = '';
@@ -2446,6 +2714,58 @@
             input.value = maxVal;
         }
     }
+
+    // Ngăn nhập số âm cho các ô input số trong filter
+    const filterInputs = [
+        'filter-height-min', 'filter-height-max',
+        'filter-length-min', 'filter-length-max',  // 🔥 THÊM
+        'filter-width-min', 'filter-width-max',    // 🔥 THÊM
+        'filter-diam-min', 'filter-diam-max',
+        'filter-price-min', 'filter-price-max'
+    ];
+
+    filterInputs.forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.addEventListener('input', function() {
+                if (this.value < 0) this.value = 0;
+                if (this.value === '-') this.value = 0;
+            });
+            input.addEventListener('keydown', function(e) {
+                if (e.key === '-' || e.key === 'e') {
+                    e.preventDefault();
+                }
+            });
+        }
+    });
+
+    // Xử lý di chuyển danh mục
+    // Xử lý di chuyển danh mục
+    document.addEventListener('click', async function(e) {
+        if (e.target.classList.contains('move-up')) {
+            const id = e.target.dataset.id;
+            try {
+                await fetchAPI(`/categories/${id}/up`, { method: 'PUT' });
+                await loadCategories();  // Tải lại cây danh mục
+                // ❌ KHÔNG hiện thông báo
+            } catch (err) {
+                showMessageModal(err.message, true);  // Chỉ hiện khi lỗi
+            }
+        }
+        
+        if (e.target.classList.contains('move-down')) {
+            const id = e.target.dataset.id;
+            try {
+                await fetchAPI(`/categories/${id}/down`, { method: 'PUT' });
+                await loadCategories();  // Tải lại cây danh mục
+                // ❌ KHÔNG hiện thông báo
+            } catch (err) {
+                showMessageModal(err.message, true);  // Chỉ hiện khi lỗi
+            }
+        }
+    });
+
+
 
 </script>
 <!-- PRODUCT PARAMETERS MODAL -->
@@ -2518,11 +2838,11 @@
                 <div class="form-row" id="char-num-rows" style="display: none;">
                     <div class="form-group">
                         <label>Мин.</label>
-                        <input type="number" id="f-char-min" placeholder="0">
+                        <input type="number" id="f-char-min" placeholder="0" min="0">
                     </div>
                     <div class="form-group">
                         <label>Макс.</label>
-                        <input type="number" id="f-char-max" placeholder="100">
+                        <input type="number" id="f-char-max" placeholder="100" min="0">
                     </div>
                 </div>
                 
@@ -2548,7 +2868,7 @@
             <button class="btn-secondary btn-sm" onclick="closeModal('m-del')">✕</button>
         </div>
         <div class="modal-body">
-            <p>Удалить <b id="del-target">—</b>?</p>
+            <p>Удалить <b id="del-target">—</b></p>
         </div>
         <div class="modal-footer">
             <button class="btn-secondary" onclick="closeModal('m-del')">Отмена</button>

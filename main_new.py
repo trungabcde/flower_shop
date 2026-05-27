@@ -11,10 +11,10 @@ app = FastAPI(title="Flower Shop API New", version="2.0")
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Cho phép tất cả origin
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Cho phép tất cả method (GET, POST, PUT, DELETE...)
+    allow_headers=["*"],  # Cho phép tất cả headers
 )
 
 # ==================== CONNECT TO THE NEW DATABASE ====================
@@ -68,6 +68,7 @@ class Parameter(Base):
     id_param_type = Column(Integer, ForeignKey("param_type.id_param_type"))
     min_value = Column(Numeric, nullable=True)   
     max_value = Column(Numeric, nullable=True)   
+    base_unit_id = Column(Integer, ForeignKey("units.id_unit"), nullable=True)  # 🔥 THÊM DÒNG NÀY
 
 class EnumValue(Base):
     __tablename__ = "enum_values"
@@ -96,6 +97,7 @@ class Enum(Base):
     id_enum = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     code = Column(String(50), unique=True, nullable=False)
+    param_id = Column(Integer, ForeignKey("parameters.id_parameter"), nullable=True)  # 🔥 THÊM DÒNG NÀY
 
 class EnumItem(Base):
     __tablename__ = "enum_items"
@@ -216,6 +218,48 @@ def delete_category(id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"ok": True}
 
+@app.put("/categories/{id}/up")
+def move_category_up(id: int, db: Session = Depends(get_db)):
+    """Di chuyển danh mục lên trên"""
+    category = db.query(Category).filter(Category.id_category == id).first()
+    if not category:
+        raise HTTPException(404, "Category not found")
+    
+    # Tìm danh mục phía trên (cùng parent_id, order_num nhỏ hơn)
+    prev = db.query(Category).filter(
+        Category.parent_id == category.parent_id,
+        Category.order_num < category.order_num
+    ).order_by(Category.order_num.desc()).first()
+    
+    if not prev:
+        raise HTTPException(400, "Already at first position")
+    
+    # Đổi order_num
+    prev.order_num, category.order_num = category.order_num, prev.order_num
+    db.commit()
+    return {"ok": True}
+
+@app.put("/categories/{id}/down")
+def move_category_down(id: int, db: Session = Depends(get_db)):
+    """Di chuyển danh mục xuống dưới"""
+    category = db.query(Category).filter(Category.id_category == id).first()
+    if not category:
+        raise HTTPException(404, "Category not found")
+    
+    # Tìm danh mục phía dưới (cùng parent_id, order_num lớn hơn)
+    next_cat = db.query(Category).filter(
+        Category.parent_id == category.parent_id,
+        Category.order_num > category.order_num
+    ).order_by(Category.order_num.asc()).first()
+    
+    if not next_cat:
+        raise HTTPException(400, "Already at last position")
+    
+    # Đổi order_num
+    next_cat.order_num, category.order_num = category.order_num, next_cat.order_num
+    db.commit()
+    return {"ok": True}
+
 # ==================== API CATEGORY PRODUCTS & PARAMETERS ====================
 @app.get("/categories/{id}/products")
 def get_products_by_category(id: int, db: Session = Depends(get_db)):
@@ -241,6 +285,7 @@ def get_products_by_category(id: int, db: Session = Depends(get_db)):
     return {"items": result}
 
 @app.get("/categories/{id}/parameters")
+
 def get_category_parameters(id: int, db: Session = Depends(get_db)):
     params = db.query(CategoryParameter).filter(CategoryParameter.id_category == id).order_by(CategoryParameter.display_order).all()
     result = []
@@ -256,19 +301,17 @@ def get_category_parameters(id: int, db: Session = Depends(get_db)):
                 "is_mandatory": cp.is_mandatory,
                 "display_order": cp.display_order,
                 "min_value": param.min_value,
-                "max_value": param.max_value
+                "max_value": param.max_value,
+                "base_unit_id": param.base_unit_id  # 🔥 THÊM DÒNG NÀY
             })
     return result
 
 # ==================== API PRODUCTS ====================
 @app.post("/products")
-def create_product(name: str, code: str, category_id: int, unit_id: int, price: int, db: Session = Depends(get_db)):
+def create_product(name: str, code: str, category_id: int, unit_id: int, price: float, db: Session = Depends(get_db)):
     existing = db.query(Product).filter(Product.code == code).first()
     if existing:
         raise HTTPException(400, "Product code already exists")
-    unit = db.query(Unit).filter(Unit.id_unit == unit_id).first()
-    if unit and unit.is_integer_only and price != int(price):
-        raise HTTPException(400, "Price must be an integer for this unit")
     product = Product(name=name, code=code, category_id=category_id, unit_id=unit_id, price=price)
     db.add(product)
     db.commit()
@@ -279,7 +322,7 @@ def create_product(name: str, code: str, category_id: int, unit_id: int, price: 
 def update_product(
     id: int, 
     name: str, 
-    price: int,
+    price: float,
     code: Optional[str] = None,
     unit_id: Optional[int] = None,
     category_id: Optional[int] = None,
@@ -290,10 +333,6 @@ def update_product(
         raise HTTPException(404, "Product not found")
     
 
-    target_unit_id = unit_id if unit_id is not None else product.unit_id
-    unit = db.query(Unit).filter(Unit.id_unit == target_unit_id).first()
-    if unit and unit.is_integer_only and price != int(price):
-        raise HTTPException(400, "Price must be an integer for this unit")
     
 
     product.name = name
@@ -337,16 +376,19 @@ def filter_products(
     height_max: Optional[float] = None,
     diam_min: Optional[float] = None,
     diam_max: Optional[float] = None,
+    # 🔥 THÊM 4 DÒNG NÀY 🔥
+    length_min: Optional[float] = None,
+    length_max: Optional[float] = None,
+    width_min: Optional[float] = None,
+    width_max: Optional[float] = None,
     db: Session = Depends(get_db)
 ):
     """Lọc sản phẩm theo danh mục, giá, và các đặc tính (enum, số)"""
     
-
     query = db.query(Product)
     
-
+    # Lọc theo danh mục (bao gồm danh mục con)
     if category_id:
-
         def get_all_child_ids(parent_id):
             ids = [parent_id]
             children = db.query(Category).filter(Category.parent_id == parent_id).all()
@@ -356,13 +398,13 @@ def filter_products(
         all_cat_ids = get_all_child_ids(category_id)
         query = query.filter(Product.category_id.in_(all_cat_ids))
     
-
+    # Lọc theo giá
     if price_min is not None:
         query = query.filter(Product.price >= price_min)
     if price_max is not None:
         query = query.filter(Product.price <= price_max)
     
-
+    # Lọc theo Тема (parameter id=1)
     if theme is not None:
         query = query.filter(
             Product.id_product.in_(
@@ -373,7 +415,7 @@ def filter_products(
             )
         )
     
-
+    # Lọc theo Цвет (parameter id=2)
     if color is not None:
         query = query.filter(
             Product.id_product.in_(
@@ -384,7 +426,7 @@ def filter_products(
             )
         )
     
-
+    # Lọc theo Высота (parameter id=4)
     if height_min is not None:
         query = query.filter(
             Product.id_product.in_(
@@ -404,7 +446,7 @@ def filter_products(
             )
         )
     
-
+    # Lọc theo Диаметр (parameter id=3)
     if diam_min is not None:
         query = query.filter(
             Product.id_product.in_(
@@ -424,10 +466,36 @@ def filter_products(
             )
         )
     
-
+    # 🔥 THÊM LỌC THEO ДЛИНА (LENGTH) 🔥
+    if length_min is not None or length_max is not None:
+        param = db.query(Parameter).filter(Parameter.code == 'LENGTH').first()
+        if param:
+            subquery = db.query(ProductParameterValue.id_product).filter(
+                ProductParameterValue.id_parameter == param.id_parameter
+            )
+            if length_min is not None:
+                subquery = subquery.filter(ProductParameterValue.value_integer >= length_min)
+            if length_max is not None:
+                subquery = subquery.filter(ProductParameterValue.value_integer <= length_max)
+            query = query.filter(Product.id_product.in_(subquery))
+    
+    # 🔥 THÊM LỌC THEO ШИРИНА (WIDTH) 🔥
+    if width_min is not None or width_max is not None:
+        param = db.query(Parameter).filter(Parameter.code == 'WIDTH').first()
+        if param:
+            subquery = db.query(ProductParameterValue.id_product).filter(
+                ProductParameterValue.id_parameter == param.id_parameter
+            )
+            if width_min is not None:
+                subquery = subquery.filter(ProductParameterValue.value_integer >= width_min)
+            if width_max is not None:
+                subquery = subquery.filter(ProductParameterValue.value_integer <= width_max)
+            query = query.filter(Product.id_product.in_(subquery))
+    
+    # Thực thi query
     products = query.all()
     
-
+    # Thêm thông tin unit
     result = []
     for p in products:
         unit = db.query(Unit).filter(Unit.id_unit == p.unit_id).first()
@@ -474,11 +542,17 @@ def get_enums(db: Session = Depends(get_db)):
     return db.query(Enum).all()
 
 @app.post("/enums")
-def create_enum(name: str, code: str, db: Session = Depends(get_db)):
+def create_enum(
+    name: str, 
+    code: str, 
+    param_id: Optional[int] = None,  # 🔥 THÊM THAM SỐ NÀY
+    db: Session = Depends(get_db)
+):
     existing = db.query(Enum).filter(Enum.code == code).first()
     if existing:
         raise HTTPException(400, "Enum code already exists")
-    enum = Enum(name=name, code=code)
+    
+    enum = Enum(name=name, code=code, param_id=param_id)  # 🔥 THÊM param_id
     db.add(enum)
     db.commit()
     db.refresh(enum)
@@ -499,6 +573,34 @@ def delete_enum(id: int, db: Session = Depends(get_db)):
     enum = db.query(Enum).filter(Enum.id_enum == id).first()
     if not enum:
         raise HTTPException(404, "Enum not found")
+    
+    # 🔥 KIỂM TRA: Có category nào đang dùng parameter liên quan đến enum này không?
+    # Tìm tất cả parameter có code liên quan
+    params_to_check = []
+    
+    # Tìm theo param_id (nếu có)
+    if enum.param_id:
+        params_to_check.append(enum.param_id)
+    
+    # Tìm theo code (COLORS -> COLOR)
+    param_code = enum.code
+    if param_code.endswith('S'):
+        param_code = param_code[:-1]
+    param = db.query(Parameter).filter(Parameter.code == param_code).first()
+    if param:
+        params_to_check.append(param.id_parameter)
+    
+    # Kiểm tra trong category_parameters
+    for p_id in params_to_check:
+        category_param = db.query(CategoryParameter).filter(
+            CategoryParameter.id_parameter == p_id
+        ).first()
+        if category_param:
+            raise HTTPException(400, f"Нельзя удалить перечисление '{enum.name}', так как оно используется в категориях")
+    
+    # Xóa enum_items trước
+    db.query(EnumItem).filter(EnumItem.id_enum == id).delete()
+    
     db.delete(enum)
     db.commit()
     return {"ok": True}
@@ -509,22 +611,85 @@ def get_enum_items(id: int, db: Session = Depends(get_db)):
     return db.query(EnumItem).filter(EnumItem.id_enum == id).order_by(EnumItem.order_num).all()
 
 @app.post("/enum-items")
-def create_enum_item(id_enum: int, item_name: str, item_code: str, db: Session = Depends(get_db)):
+def create_enum_item(
+    id_enum: int, 
+    item_name: str, 
+    item_code: str, 
+    db: Session = Depends(get_db)
+):
+    # Tạo enum_item mới
     max_order = db.query(EnumItem).filter(EnumItem.id_enum == id_enum).count()
-    item = EnumItem(id_enum=id_enum, item_name=item_name, item_code=item_code, order_num=max_order + 1)
+    item = EnumItem(
+        id_enum=id_enum, 
+        item_name=item_name, 
+        item_code=item_code, 
+        order_num=max_order + 1
+    )
     db.add(item)
     db.commit()
     db.refresh(item)
+    
+    # 🔥 TỰ ĐỘNG THÊM VÀO ENUM_VALUES DỰA VÀO PARAM_ID
+    enum_obj = db.query(Enum).filter(Enum.id_enum == id_enum).first()
+    
+    if enum_obj and enum_obj.param_id:
+        param = db.query(Parameter).filter(Parameter.id_parameter == enum_obj.param_id).first()
+        if param:
+            existing = db.query(EnumValue).filter(
+                EnumValue.parameter_id == param.id_parameter,
+                EnumValue.value_name == item_name
+            ).first()
+            if not existing:
+                enum_value = EnumValue(
+                    parameter_id=param.id_parameter,
+                    value_name=item_name,
+                    value_code=item_code
+                )
+                db.add(enum_value)
+                db.commit()
+    
     return item
 
 @app.put("/enum-items/{id}")
-def update_enum_item(id: int, item_name: str, item_code: str, db: Session = Depends(get_db)):
+def update_enum_item(
+    id: int, 
+    item_name: str, 
+    item_code: str, 
+    db: Session = Depends(get_db)
+):
     item = db.query(EnumItem).filter(EnumItem.id_item == id).first()
     if not item:
         raise HTTPException(404, "Enum item not found")
+    
+    old_name = item.item_name
     item.item_name = item_name
     item.item_code = item_code
     db.commit()
+    
+    # 🔥 CẬP NHẬT ENUM_VALUES 🔥
+    enum_obj = db.query(Enum).filter(Enum.id_enum == item.id_enum).first()
+    
+    ENUM_TO_PARAM = {
+        "COLORS": "COLOR",
+        "THEMES": "THEME",
+        "PACK_MATERIALS": "MATERIAL",
+        "COUNTRIES": "COUNTRY"
+    }
+    
+    if enum_obj and enum_obj.code in ENUM_TO_PARAM:
+        param_code = ENUM_TO_PARAM[enum_obj.code]
+        param = db.query(Parameter).filter(Parameter.code == param_code).first()
+        
+        if param:
+            enum_value = db.query(EnumValue).filter(
+                EnumValue.parameter_id == param.id_parameter,
+                EnumValue.value_name == old_name
+            ).first()
+            if enum_value:
+                enum_value.value_name = item_name
+                enum_value.value_code = item_code
+                db.commit()
+    
     return item
 
 @app.delete("/enum-items/{id}")
@@ -532,6 +697,29 @@ def delete_enum_item(id: int, db: Session = Depends(get_db)):
     item = db.query(EnumItem).filter(EnumItem.id_item == id).first()
     if not item:
         raise HTTPException(404, "Enum item not found")
+    
+    # 🔥 XÓA TRONG ENUM_VALUES TRƯỚC 🔥
+    enum_obj = db.query(Enum).filter(Enum.id_enum == item.id_enum).first()
+    
+    ENUM_TO_PARAM = {
+        "COLORS": "COLOR",
+        "THEMES": "THEME",
+        "PACK_MATERIALS": "MATERIAL",
+        "COUNTRIES": "COUNTRY"
+    }
+    
+    if enum_obj and enum_obj.code in ENUM_TO_PARAM:
+        param_code = ENUM_TO_PARAM[enum_obj.code]
+        param = db.query(Parameter).filter(Parameter.code == param_code).first()
+        
+        if param:
+            enum_value = db.query(EnumValue).filter(
+                EnumValue.parameter_id == param.id_parameter,
+                EnumValue.value_name == item.item_name
+            ).first()
+            if enum_value:
+                db.delete(enum_value)
+    
     db.delete(item)
     db.commit()
     return {"ok": True}
@@ -545,6 +733,12 @@ def delete_enum_value(id: int, db: Session = Depends(get_db)):
     db.delete(enum_value)
     db.commit()
     return {"ok": True}
+
+@app.get("/parameters-for-enum")
+def get_parameters_for_enum(db: Session = Depends(get_db)):
+    """Lấy danh sách parameters có kiểu enum (để chọn khi tạo enum)"""
+    params = db.query(Parameter).filter(Parameter.id_param_type == 3).all()
+    return [{"id": p.id_parameter, "name": p.name, "code": p.code} for p in params]
 
 @app.post("/enum-values")
 def create_enum_value(
@@ -611,26 +805,25 @@ def create_parameter(
     id_param_type: int,
     min_value: Optional[float] = None,
     max_value: Optional[float] = None,
+    base_unit_id: Optional[int] = None,  # 🔥 THÊM DÒNG NÀY
     db: Session = Depends(get_db)
 ):
-
     param_type = db.query(ParamType).filter(ParamType.id_param_type == id_param_type).first()
     if not param_type:
         raise HTTPException(400, "Invalid param_type id")
     
-
     existing = db.query(Parameter).filter(Parameter.code == code).first()
     if existing:
         raise HTTPException(400, "Parameter code already exists")
     
-
     param = Parameter(
         name=name,
         short_name=short_name,
         code=code,
         id_param_type=id_param_type,
         min_value=min_value,
-        max_value=max_value
+        max_value=max_value,
+        base_unit_id=base_unit_id  # 🔥 THÊM DÒNG NÀY
     )
     db.add(param)
     db.commit()
@@ -646,13 +839,13 @@ def update_parameter(
     id_param_type: int,
     min_value: Optional[float] = None,
     max_value: Optional[float] = None,
+    base_unit_id: Optional[int] = None,  # 🔥 THÊM DÒNG NÀY
     db: Session = Depends(get_db)
 ):
     param = db.query(Parameter).filter(Parameter.id_parameter == id_parameter).first()
     if not param:
         raise HTTPException(404, "Parameter not found")
     
-
     existing = db.query(Parameter).filter(Parameter.code == code, Parameter.id_parameter != id_parameter).first()
     if existing:
         raise HTTPException(400, "Parameter code already exists")
@@ -663,6 +856,7 @@ def update_parameter(
     param.id_param_type = id_param_type
     param.min_value = min_value
     param.max_value = max_value
+    param.base_unit_id = base_unit_id  # 🔥 THÊM DÒNG NÀY
     
     db.commit()
     db.refresh(param)
@@ -836,13 +1030,25 @@ def remove_parameter_from_category(
     id_parameter: int,
     db: Session = Depends(get_db)
 ):
-    """Remove the parameter from the list"""
+    """Xóa parameter khỏi danh mục"""
     cp = db.query(CategoryParameter).filter(
         CategoryParameter.id_category == id_category,
         CategoryParameter.id_parameter == id_parameter
     ).first()
     if not cp:
         raise HTTPException(404, "Parameter not found in this category")
+    
+    # 🔥 THÊM: Xóa tất cả product_parameter_values liên quan đến parameter này TRONG category này
+    # Lấy tất cả sản phẩm thuộc category này
+    products = db.query(Product).filter(Product.category_id == id_category).all()
+    product_ids = [p.id_product for p in products]
+    
+    if product_ids:
+        # Xóa giá trị của parameter này trong các sản phẩm của category
+        db.query(ProductParameterValue).filter(
+            ProductParameterValue.id_product.in_(product_ids),
+            ProductParameterValue.id_parameter == id_parameter
+        ).delete()
     
     db.delete(cp)
     db.commit()
@@ -956,6 +1162,63 @@ def get_category_details(id: int, db: Session = Depends(get_db)):
 @app.get("/")
 def root():
     return {"message": "Flower Shop API New v2.0 is running", "db": "flower_shop_new"}
+
+@app.post("/sync-enum-values")
+def sync_enum_values(db: Session = Depends(get_db)):
+    """Đồng bộ tất cả enum_items vào enum_values (xóa trùng)"""
+    
+    ENUM_TO_PARAM = {
+        "COLORS": "COLOR",
+        "THEMES": "THEME",
+        "PACK_MATERIALS": "MATERIAL",
+        "COUNTRIES": "COUNTRY"
+    }
+    
+    total_added = 0
+    
+    for enum_code, param_code in ENUM_TO_PARAM.items():
+        # Tìm enum
+        enum_obj = db.query(Enum).filter(Enum.code == enum_code).first()
+        if not enum_obj:
+            print(f"❌ Enum not found: {enum_code}")
+            continue
+        
+        # Tìm parameter
+        param = db.query(Parameter).filter(Parameter.code == param_code).first()
+        if not param:
+            print(f"❌ Parameter not found: {param_code}")
+            continue
+        
+        # 🔥 XÓA CŨ CỦA PARAMETER NÀY 🔥
+        deleted = db.query(EnumValue).filter(EnumValue.parameter_id == param.id_parameter).delete()
+        print(f"🗑️ Deleted {deleted} old values for {param.name}")
+        
+        db.commit()  # 🔥 THÊM DÒNG NÀY: commit ngay sau khi xóa
+        
+        # 🔥 THÊM LẠI TỪ ENUM_ITEMS 🔥
+        items = db.query(EnumItem).filter(EnumItem.id_enum == enum_obj.id_enum).order_by(EnumItem.order_num).all()
+        
+        for item in items:
+            # Kiểm tra trước khi thêm (tránh trùng)
+            existing = db.query(EnumValue).filter(
+                EnumValue.parameter_id == param.id_parameter,
+                EnumValue.value_name == item.item_name
+            ).first()
+            
+            if not existing:
+                enum_value = EnumValue(
+                    parameter_id=param.id_parameter,
+                    value_name=item.item_name,
+                    value_code=item.item_code
+                )
+                db.add(enum_value)
+                total_added += 1
+                print(f"✅ Added: {item.item_name} -> {param.name}")
+            else:
+                print(f"⚠️ Already exists: {item.item_name}")
+    
+    db.commit()
+    return {"message": f"Synced {total_added} enum values successfully"}
 
 # ==================== CHẠY SERVER ====================
 if __name__ == "__main__":
