@@ -1,0 +1,165 @@
+erDiagram
+    products ||--o{ routing_material_prices : costs
+    products ||--o{ routing_nodes : purchased_as
+    products ||--o{ spec_versions : has
+    spec_versions ||--o{ routing_routes : produces
+    spec_variants ||--o{ routing_routes : configures
+    routing_departments ||--o{ routing_work_centers : contains
+    routing_operation_types o|--o{ routing_operation_types : parent
+    routing_professions o|--o{ routing_professions : parent
+    routing_routes ||--o{ routing_nodes : operations
+    routing_nodes o|--o{ routing_routes : final_output
+    routing_operation_types ||--o{ routing_nodes : type
+    routing_work_centers ||--o{ routing_nodes : performed_at
+    routing_professions ||--o{ routing_nodes : requires
+    routing_qualifications ||--o{ routing_nodes : skill
+    routing_nodes ||--o{ routing_inputs : consumer
+    routing_nodes ||--o{ routing_inputs : source
+    routing_nodes ||--o{ routing_node_tools : uses
+    routing_tools ||--o{ routing_node_tools : tool
+    routing_typical_processes ||--o{ routing_tp_parameters : defines
+    routing_typical_processes ||--o{ routing_tp_operations : defines
+    routing_tp_parameters o|--o{ routing_tp_operations : time_parameter
+    routing_operation_types ||--o{ routing_tp_operations : type
+    routing_work_centers ||--o{ routing_tp_operations : station
+    routing_professions ||--o{ routing_tp_operations : profession
+    routing_qualifications ||--o{ routing_tp_operations : qualification
+    routing_typical_processes ||--o{ routing_tp_applications : instantiated
+    routing_routes ||--o{ routing_tp_applications : applied_in
+    routing_tp_applications ||--o{ routing_tp_values : chooses
+    routing_tp_parameters ||--o{ routing_tp_values : value_of
+    routing_tp_operations ||--o{ routing_tp_inputs : output_operation
+    routing_tp_operations o|--o{ routing_tp_inputs : input_operation
+    products o|--o{ routing_tp_inputs : purchase
+    routing_tp_parameters o|--o{ routing_tp_inputs : quantity_parameter
+    routing_tp_operations ||--o{ routing_tp_tools : uses
+    routing_tools ||--o{ routing_tp_tools : tool
+    routing_tp_applications ||--|| routing_tp_application_outputs : final
+    routing_nodes ||--o| routing_tp_application_outputs : output_node
+    routing_tp_applications ||--o{ routing_nodes : materializes
+    routing_tp_operations ||--o{ routing_nodes : template_operation
+
+    products {
+       integer id_product PK
+       string name
+       integer unit_id FK
+    }
+    spec_versions {
+       integer id_spec_version PK
+       integer product_id FK
+       numeric for_quantity
+    }
+    spec_variants {
+       integer id_variant PK
+       integer root_node_id FK
+    }
+    routing_departments {
+       integer id PK
+       varchar code UK
+       text name
+    }
+    routing_work_centers {
+       integer id PK
+       varchar code UK
+       integer department_id FK
+       text type_name
+    }
+    routing_operation_types {
+       integer id PK
+       varchar code UK
+       integer parent_id FK
+    }
+    routing_professions {
+       integer id PK
+       varchar code UK
+       integer parent_id FK
+       numeric base_hourly_rate
+    }
+    routing_qualifications {
+       integer id PK
+       varchar code UK
+       numeric coefficient
+       integer sort_order UK
+    }
+    routing_tools {
+       integer id PK
+       varchar code UK
+       varchar kind
+    }
+    routing_material_prices {
+       integer product_id PK,FK
+       numeric unit_cost
+    }
+    routing_routes {
+       integer id PK
+       integer spec_version_id FK
+       integer variant_id FK
+       integer final_node_id FK
+    }
+    routing_nodes {
+       integer id PK
+       varchar kind
+       integer route_id FK
+       integer purchase_product_id FK
+       integer number
+       text operation_name
+       text state_name
+       numeric setup_minutes
+       numeric unit_minutes
+       integer application_id FK
+    }
+    routing_inputs {
+       integer output_node_id PK,FK
+       integer input_node_id PK,FK
+       numeric quantity
+       numeric for_quantity
+    }
+    routing_node_tools {
+       integer node_id PK,FK
+       integer tool_id PK,FK
+    }
+    routing_typical_processes {
+       integer id PK
+       text name
+       integer final_operation_id FK
+    }
+    routing_tp_parameters {
+       integer id PK
+       integer process_id FK
+       varchar code
+       numeric default_value
+       boolean integer_only
+    }
+    routing_tp_operations {
+       integer id PK
+       integer process_id FK
+       integer number
+       integer time_parameter_id FK
+       numeric time_base
+       numeric time_factor
+    }
+    routing_tp_inputs {
+       integer id PK
+       integer output_operation_id FK
+       integer input_operation_id FK
+       integer input_product_id FK
+       integer quantity_parameter_id FK
+    }
+    routing_tp_tools {
+       integer operation_id PK,FK
+       integer tool_id PK,FK
+    }
+    routing_tp_applications {
+       integer id PK
+       integer route_id FK
+       integer process_id FK
+    }
+    routing_tp_values {
+       integer application_id PK,FK
+       integer parameter_id PK,FK
+       numeric value
+    }
+    routing_tp_application_outputs {
+       integer application_id PK,FK
+       integer node_id FK
+    }
